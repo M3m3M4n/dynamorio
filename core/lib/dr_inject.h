@@ -117,7 +117,6 @@ DR_EXPORT
 int
 dr_inject_process_attach(process_id_t pid, void **data);
 #endif
-
 #ifdef UNIX
 
 DR_EXPORT

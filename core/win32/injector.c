@@ -56,6 +56,7 @@
 #define UNICODE
 #define _UNICODE
 
+
 #include "../globals.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -66,12 +67,13 @@
 #include <stdlib.h>
 #include <time.h>
 #include <tchar.h>
-
 #include "globals_shared.h"
 #include "ntdll.h"
 #include "inject_shared.h"
 #include "os_private.h"
 #include "dr_inject.h"
+
+#pragma comment(lib, "psapi")
 
 #define VERBOSE 0
 #if VERBOSE
@@ -757,6 +759,8 @@ int
 dr_inject_process_attach(process_id_t pid, void **data OUT)
 {
     dr_inject_info_t *info = HeapAlloc(GetProcessHeap(), 0, sizeof(*info));
+    if (!info)
+        return ERROR_INVALID_PARAMETER;
     memset(info, 0, sizeof(*info));
     int errcode = ERROR_SUCCESS;
     if (DebugActiveProcess((DWORD)pid)) {
@@ -772,16 +776,17 @@ dr_inject_process_attach(process_id_t pid, void **data OUT)
                 break;
             }
         }
-        char szExePath[MAX_PATH];
-        char *pExeName = NULL;
-        GetModuleFileNameExA(dbgevt.u.CreateProcessInfo.hProcess, NULL, szExePath,
-                             MAX_PATH);
-        pExeName = strrchr(szExePath, '\\');
-        if (pExeName == NULL) {
+        TCHAR exe_path[MAXIMUM_PATH];
+        TCHAR *exe_name = NULL;
+        char buffer[MAXIMUM_PATH];
+        GetModuleFileNameExW(dbgevt.u.CreateProcessInfo.hProcess, NULL, exe_path,
+                             MAXIMUM_PATH);
+        tchar_to_char(exe_path, buffer, MAXIMUM_PATH);
+        exe_name = strrchr(buffer, '\\');
+        if (exe_name == NULL)
             return ERROR_INVALID_PARAMETER;
-        }
-
-        strcpy(info->image_name, pExeName + 1);
+        strncpy(info->image_name, exe_name + 1, strlen(exe_name + 1));
+        NULL_TERMINATE_BUFFER(info->image_name);
         char_to_tchar(info->image_name, info->wimage_name,
                       BUFFER_SIZE_ELEMENTS(info->wimage_name));
 
@@ -795,9 +800,9 @@ dr_inject_process_attach(process_id_t pid, void **data OUT)
         DuplicateHandle(GetCurrentProcess(), dbgevt.u.CreateProcessInfo.hThread,
                         GetCurrentProcess(), &info->pi.hThread, 0, FALSE,
                         DUPLICATE_SAME_ACCESS);
-    } else {
-        errcode = GetLastError();
     }
+    else
+        errcode = GetLastError();
     *data = info;
     return errcode;
 }
