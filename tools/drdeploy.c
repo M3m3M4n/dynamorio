@@ -1900,7 +1900,6 @@ done_with_options:
         limit = -1; /* no wait */
     }
 #    endif
-    char buffer[10];// to delete
     if (limit >= 0) {
 #    ifdef WINDOWS
         double wallclock;
