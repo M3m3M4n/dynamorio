@@ -759,23 +759,22 @@ int
 dr_inject_process_attach(process_id_t pid, void **data OUT)
 {
     dr_inject_info_t *info = HeapAlloc(GetProcessHeap(), 0, sizeof(*info));
-    if (!info) {
+    if (!info)
         return ERROR_INVALID_PARAMETER;
-    }
     memset(info, 0, sizeof(*info));
     int errcode = ERROR_SUCCESS;
-    if (DebugActiveProcess((DWORD)pid))
-    {
+    if (DebugActiveProcess((DWORD)pid)) {
         info->using_debugger_injection = false;
         info->attached = true;
         DEBUG_EVENT dbgevt = { 0 };
-        while (true)
-        {
+        for (;;) {
             dbgevt.dwProcessId = (DWORD)pid;
             WaitForDebugEvent(&dbgevt, INFINITE);
             ContinueDebugEvent(dbgevt.dwProcessId, dbgevt.dwThreadId, DBG_CONTINUE);
-            if (dbgevt.dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT)
+
+            if (dbgevt.dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT) {
                 break;
+            }
         }
         TCHAR exe_path[MAXIMUM_PATH];
         TCHAR *exe_name = NULL;
@@ -793,9 +792,11 @@ dr_inject_process_attach(process_id_t pid, void **data OUT)
 
         info->pi.dwProcessId = dbgevt.dwProcessId;
         info->pi.dwThreadId = dbgevt.dwThreadId;
+
         DuplicateHandle(GetCurrentProcess(), dbgevt.u.CreateProcessInfo.hProcess,
                         GetCurrentProcess(), &info->pi.hProcess, 0, FALSE,
                         DUPLICATE_SAME_ACCESS);
+
         DuplicateHandle(GetCurrentProcess(), dbgevt.u.CreateProcessInfo.hThread,
                         GetCurrentProcess(), &info->pi.hThread, 0, FALSE,
                         DUPLICATE_SAME_ACCESS);
