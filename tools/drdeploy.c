@@ -1884,7 +1884,7 @@ done_with_options:
         }
     }
 #    endif
-
+    fprintf(stdout,"INJECTING...\n");
     if (inject && !dr_inject_process_inject(inject_data, force_injection, drlib_path)) {
 #    ifdef DRRUN
         error("unable to inject: exec of |%s| failed", drlib_path);
@@ -1895,7 +1895,7 @@ done_with_options:
     }
 
     IF_WINDOWS(start_time = time(NULL);)
-
+    fprintf(stdout,"DRINJECT_RUN\n");
     if (!dr_inject_process_run(inject_data)) {
         error("unable to run");
         goto error;

@@ -1518,6 +1518,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
     int signal;
 
     /* Attach to the process in question. */
+    fprintf(stdout, "OUR_PTRACE\n");
     r = our_ptrace(PTRACE_ATTACH, info->pid, NULL, NULL);
     if (r < 0) {
         if (verbose) {
@@ -1525,6 +1526,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
         }
         return false;
     }
+    fprintf(stdout, "wait_until_signal\n");
     if (!wait_until_signal(info->pid, SIGSTOP))
         return false;
 
@@ -1543,12 +1545,14 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
             /* We are attached to target process, singlestep to make sure not returning
              * from blocked syscall.
              */
+            fprintf(stdout,"SINGLE_STEP\n");
             if (!ptrace_singlestep(info->pid))
                 return false;
         }
     }
 
     /* Open libdynamorio.so as readonly in the child. */
+    fprintf(stdout,"INJECTEE_OPEN\n");
     dr_fd = injectee_open(info, library_path, O_RDONLY, 0);
     if (dr_fd < 0) {
         if (verbose) {
@@ -1563,12 +1567,14 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
     /* Call our private loader, but perform the mmaps in the child process
      * instead of the parent.
      */
+    fprintf(stdout,"ELF_READ_HEADER\n");
     if (!elf_loader_read_headers(&loader, library_path))
         return false;
     /* XXX: Have to use globals to communicate to injectee_map_file. =/ */
     injector_info = info;
     injector_dr_fd = loader.fd;
     injectee_dr_fd = dr_fd;
+    fprintf(stdout,"ELF_LOADER_MAP_PHEADERS\n");
     injected_base = elf_loader_map_phdrs(&loader, true /*fixed*/, injectee_map_file,
                                          injectee_unmap, injectee_prot, NULL,
                                          MODLOAD_SEPARATE_PROCESS /*!reachable*/);
@@ -1640,6 +1646,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
 #    endif
 
     regs.REG_PC_FIELD = (ptr_int_t)injected_dr_start;
+    fprintf(stdout,"PTRACE_SETREG\n");
     our_ptrace_setregs(info->pid, &regs);
 
     if (op_exec_gdb) {
@@ -1655,6 +1662,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
      * to its original handler.
      */
     signal = 0;
+    fprintf(stdout,"WAITING SIGNAL\n");
     do {
         /* Continue or deliver pending signal from status. */
         r = our_ptrace(PTRACE_CONT, info->pid, NULL, (void *)(ptr_int_t)signal);
