@@ -1203,7 +1203,7 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
         /* XXX: This disas call aborts on our raw bytes instructions.  Can we
          * teach DR's disassembler to avoid those instrs?
          */
-        //instrlist_disassemble(dc, pc, ilist, STDERR);
+        instrlist_disassemble(dc, pc, ilist, STDERR);
         fflush(stderr);
     }
 
