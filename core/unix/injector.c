@@ -118,7 +118,7 @@ isspace(int c)
 }
 #endif
 
-static bool verbose = false;
+static bool verbose = true;
 
 /* Set from a signal handler.
  */
@@ -707,6 +707,8 @@ dr_inject_process_inject(void *data, bool force_injection, const char *library_p
         library_path = dr_path_buf;
     }
 
+    printf("LIBRARY_PAHT %s | DR_PATH_BUF %s\n", library_path, dr_path_buf);
+
     switch (info->method) {
     case INJECT_EARLY: return inject_early(info, library_path);
     case INJECT_LD_PRELOAD: return inject_ld_preload(info, library_path);
@@ -1047,6 +1049,7 @@ static void
 gen_push_string(void *dc, instrlist_t *ilist, const char *msg)
 {
 #    ifdef X86
+    printf("gen_push_string\n");
     instr_t *after_msg = INSTR_CREATE_label(dc);
     instr_t *msg_instr = instr_build_bits(dc, OP_UNDECODED, strlen(msg) + 1);
     APP(ilist, INSTR_CREATE_call(dc, opnd_create_instr(after_msg)));
@@ -1186,12 +1189,16 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
 
     /* Append an int3 so we can catch the break. */
     APP(ilist, XINST_CREATE_debug_instr(dc));
+    if (!verbose)
+        fprintf(stdout,"verbose: 0\n");
     if (verbose) {
+        fprintf(stdout,"verbose: 1\n");
         fprintf(stderr, "injecting code:\n");
         /* XXX: This disas call aborts on our raw bytes instructions.  Can we
          * teach DR's disassembler to avoid those instrs?
          */
         instrlist_disassemble(dc, pc, ilist, STDERR);
+        fflush(stderr);
     }
 
     /* Encode ilist into shellcode. */
@@ -1207,6 +1214,7 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
         !ptrace_write_memory(info->pid, pc, shellcode, code_size))
         return failure;
 
+    fprintf(stdout,"injectee_run_get_retval RUN SHELL\n");
     /* Run it!
      * While under Ptrace during blocking syscall, upon continuing
      * execution, tracee PC will be set back to syscall instruction
@@ -1226,14 +1234,17 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
 
     /* Get return value. */
     ret = failure;
+    fprintf(stdout,"injectee_run_get_retval get ret\n");
     r = our_ptrace(PTRACE_PEEKUSER, info->pid,
                    (void *)offsetof(struct USER_REGS_TYPE, REG_RETVAL_FIELD), &ret);
     if (r < 0)
         return r;
 
+    fprintf(stdout,"injectee_run_get_retval WRITEBACK\n");
     /* Put back original code and registers. */
     if (!ptrace_write_memory(info->pid, pc, orig_code, code_size))
         return failure;
+    fprintf(stdout,"injectee_run_get_retval set reg\n");
     r = our_ptrace_setregs(info->pid, &regs);
     if (r < 0)
         return r;
@@ -1262,6 +1273,7 @@ injectee_open(dr_inject_info_t *info, const char *path, int flags, mode_t mode)
 #    else
     gen_syscall(dc, ilist, SYSNUM_NO_CANCEL(SYS_openat), num_args, args);
 #    endif
+    fprintf(stdout,"injectee_run_get_retval\n");
     return injectee_run_get_retval(info, dc, ilist);
 }
 
@@ -1526,6 +1538,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
     if (r < 0) {
         if (verbose) {
             fprintf(stderr, "PTRACE_ATTACH failed with error: %s\n", strerror(-r));
+            fflush(stderr);
         }
         return false;
     }
@@ -1558,11 +1571,13 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
     fprintf(stdout,"INJECTEE_OPEN\n");
     dr_fd = injectee_open(info, library_path, O_RDONLY, 0);
     if (dr_fd < 0) {
+        fprintf(stdout,"INJECTEE_OPEN < 0\n");
         if (verbose) {
             fprintf(stderr,
                     "Unable to open libdynamorio.so in injectee (%d): "
                     "%s\n",
                     -dr_fd, strerror(-dr_fd));
+            fflush(stderr);
         }
         return false;
     }
