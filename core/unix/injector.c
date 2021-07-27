@@ -1434,12 +1434,15 @@ detach_and_exec_gdb(process_id_t pid, const char *library_path)
 bool
 ptrace_singlestep(process_id_t pid)
 {
+    fprintf(stdout,"SINGLE_STEP-ptrace\n");
     if (our_ptrace(PTRACE_SINGLESTEP, pid, NULL, NULL) < 0)
         return false;
-
-    if (!wait_until_signal(pid, SIGTRAP))
+    fprintf(stdout,"SINGLE_STEP-wait\n");
+    if (!wait_until_signal(pid, SIGTRAP)) {
+        fprintf(stdout,"SINGLE_STEP-false\n");
         return false;
-
+    }
+    fprintf(stdout,"SINGLE_STEP-true\n");
     return true;
 }
 
