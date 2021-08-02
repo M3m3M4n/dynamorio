@@ -1239,7 +1239,7 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
     if (!continue_until_break(info->pid)) {
         fprintf(stdout,"injectee_run_get_retval RUN SHELL GONE TO SHIT\n");
         return failure;
-    } 
+    }
 
     /* Get return value. */
     ret = failure;
@@ -1267,12 +1267,22 @@ injectee_open(dr_inject_info_t *info, const char *path, int flags, mode_t mode)
 {
     void *dc = GLOBAL_DCONTEXT;
     instrlist_t *ilist = instrlist_create(dc);
-    /* For attaching during blocking syscalls 
-     * On X86, kernel moves PC back 2 (syscall opcode size) after ptrace
-     * Inserting NOPs then move PC up 2 bytes eliminates the problem
-     */
-    APP(ilist, XINST_CREATE_nop(dc));
-    APP(ilist, XINST_CREATE_nop(dc));
+    if (!info->wait_syscall) {
+        /* For attaching during blocking syscalls.
+         * Kernel will moves PC back 1 syscall instruction after tracee continue executing
+         * Inserting NOPs and move PC up to compensate.
+         */
+        uint i;
+        uint instr_num = 0;
+#    ifdef X86
+        instr_num = 2; /* sizeof(syscall) == 2 * sizeof(nop) */
+#    elif defined(ARM) || defined(AARCH64)
+        instr_num = 1;
+#    endif
+        for (i = 0; i < instr_num; i++) {
+            APP(ilist, XINST_CREATE_nop(dc));
+        }
+    }
     opnd_t args[MAX_SYSCALL_ARGS];
     int num_args = 0;
     gen_push_string(dc, ilist, path);
