@@ -1190,9 +1190,15 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
 
     fprintf(stdout,"injectee_run_get_retval RUN SHELL\n");
     /* Run it! */
-    our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc);
-    if (!continue_until_break(info->pid))
+
+    /* FOR BLOCKING SYSCALL FIX, PC MUST +2 TO COMPENSATE*/
+
+    our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc + 2);
+    if (!continue_until_break(info->pid)) {
+        fprintf(stdout,"injectee_run_get_retval RUN SHELL GONE TO SHIT\n");
         return failure;
+    }
+        
 
     /* Get return value. */
     ret = failure;
@@ -1220,6 +1226,12 @@ injectee_open(dr_inject_info_t *info, const char *path, int flags, mode_t mode)
 {
     void *dc = GLOBAL_DCONTEXT;
     instrlist_t *ilist = instrlist_create(dc);
+    /* For attaching during blocking syscalls 
+     * On X86, kernel moves PC back 2 (syscall opcode size) after ptrace
+     * Inserting NOPs then move PC up 2 bytes eliminates the problem
+     */
+    APP(ilist, XINST_CREATE_nop(dc));
+    APP(ilist, XINST_CREATE_nop(dc));
     opnd_t args[MAX_SYSCALL_ARGS];
     int num_args = 0;
     gen_push_string(dc, ilist, path);
@@ -1459,6 +1471,22 @@ ptrace_singlestep(process_id_t pid)
 }
 
 bool
+ptrace_send_and_wait_signal(process_id_t pid, int sig)
+{
+    fprintf(stdout,"send_and_wait_signal-ptrace\n");
+    if (our_ptrace(PTRACE_SINGLESTEP, pid, NULL, NULL) < 0)
+        return false;
+    fprintf(stdout,"send_and_wait_signal-KILL\n");
+    kill(pid, sig);
+    fprintf(stdout,"send_and_wait_signal-wait\n");
+    if (!wait_until_signal(pid, sig)) {
+        fprintf(stdout,"send_and_wait_signal-false\n");
+        return false;
+    }
+    return true;
+}
+
+bool
 inject_ptrace(dr_inject_info_t *info, const char *library_path)
 {
     long r;
@@ -1499,9 +1527,9 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
         /* We are attached to target process, singlestep to make sure not returning from
          * blocked syscall.
          */
-        fprintf(stdout,"SINGLE_STEP\n");
-        if (!ptrace_singlestep(info->pid))
-            return false;
+        //fprintf(stdout,"SINGLE_STEP\n");
+        //if (!ptrace_singlestep(info->pid))
+        //    return false;
     }
 
     /* Open libdynamorio.so as readonly in the child. */
