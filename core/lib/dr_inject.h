@@ -171,6 +171,10 @@ DR_EXPORT
  *                             must ensure this data is valid until the
  *                             inject data is disposed.
  *
+ * \param[in]   wait_syscall   Early inject syscall handling mode.  The caller
+ *                             must ensure this data is valid until the
+ *                             inject data is disposed.
+ *
  * \param[out]  data           An opaque pointer that should be passed to
  *                             subsequent dr_inject_* routines to refer to
  *                             this process.
@@ -178,7 +182,7 @@ DR_EXPORT
  *          future attach.
  */
 int
-dr_inject_prepare_to_attach(process_id_t pid, const char *app_name, void **data);
+dr_inject_prepare_to_attach(process_id_t pid, const char *app_name, bool wait_syscall, void **data);
 
 DR_EXPORT
 /**

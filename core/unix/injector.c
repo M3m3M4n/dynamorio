@@ -145,6 +145,9 @@ typedef struct _dr_inject_info_t {
     bool exited;
     int exitcode;
     bool no_emulate_brk; /* is -no_emulate_brk in the option string? */
+    
+    bool wait_syscall; /* valid iff -attach, early handling of blocking syscalls */
+    bool wait_syscall_init; /* after ptrace a blocking syscall, run with offset only once */
 
 #ifdef MACOS
     bool spawn_32bit;
@@ -569,7 +572,7 @@ dr_inject_prepare_to_exec(const char *exe, const char **argv, void **data OUT)
 
 DR_EXPORT
 int
-dr_inject_prepare_to_attach(process_id_t pid, const char *appname, void **data OUT)
+dr_inject_prepare_to_attach(process_id_t pid, const char *appname, bool wait_syscall, void **data OUT)
 {
     dr_inject_info_t *info = create_inject_info(appname, NULL);
     int errcode = 0;
@@ -578,6 +581,8 @@ dr_inject_prepare_to_attach(process_id_t pid, const char *appname, void **data O
     info->pipe_fd = 0; /* No pipe. */
     info->exec_self = false;
     info->method = INJECT_PTRACE;
+    info->wait_syscall = wait_syscall;
+    info->wait_syscall_init = false;
     return errcode;
 }
 
@@ -1191,14 +1196,26 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
     fprintf(stdout,"injectee_run_get_retval RUN SHELL\n");
     /* Run it! */
 
-    /* FOR BLOCKING SYSCALL FIX, PC MUST +2 TO COMPENSATE*/
 
-    our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc + 2);
+    // WATCHOUT , THIS CALL IS NOT ONLY USED IN INJECTEE_OPEN, WE NEED OTHER WAY TO ADD OFFSET
+
+    if (!info->wait_syscall && !info->wait_syscall_init){
+        uint offset = 0;
+#    ifdef X86
+        offset = 2;
+#    elif defined(ARM) || defined(AARCH64)
+        offset = 4;
+#    endif
+        our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc + offset);
+        info->wait_syscall_init = true;
+    }
+    else{
+        our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc);
+    }
     if (!continue_until_break(info->pid)) {
         fprintf(stdout,"injectee_run_get_retval RUN SHELL GONE TO SHIT\n");
         return failure;
-    }
-        
+    }  
 
     /* Get return value. */
     ret = failure;
@@ -1226,12 +1243,22 @@ injectee_open(dr_inject_info_t *info, const char *path, int flags, mode_t mode)
 {
     void *dc = GLOBAL_DCONTEXT;
     instrlist_t *ilist = instrlist_create(dc);
-    /* For attaching during blocking syscalls 
-     * On X86, kernel moves PC back 2 (syscall opcode size) after ptrace
-     * Inserting NOPs then move PC up 2 bytes eliminates the problem
-     */
-    APP(ilist, XINST_CREATE_nop(dc));
-    APP(ilist, XINST_CREATE_nop(dc));
+    if (!info->wait_syscall) {
+        /* For attaching during blocking syscalls.
+         * Kernel will moves PC back 1 syscall instruction after tracee continue executing
+         * Inserting NOPs and move PC up to compensate.
+         */
+        uint i;
+        uint instr_num = 0;
+#    ifdef X86
+        instr_num = 2; /* sizeof(syscall) == 2 * sizeof(nop) */
+#    elif defined(ARM) || defined(AARCH64)
+        instr_num = 1;
+#    endif
+        for (i = 0; i < instr_num; i++) {
+            APP(ilist, XINST_CREATE_nop(dc));
+        }
+    }
     opnd_t args[MAX_SYSCALL_ARGS];
     int num_args = 0;
     gen_push_string(dc, ilist, path);
@@ -1524,12 +1551,16 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
         if (!continue_until_break(info->pid))
             return false;
     } else {
-        /* We are attached to target process, singlestep to make sure not returning from
-         * blocked syscall.
-         */
-        //fprintf(stdout,"SINGLE_STEP\n");
-        //if (!ptrace_singlestep(info->pid))
-        //    return false;
+        if (info->wait_syscall) {
+            /* We are attached to target process, singlestep to make sure not returning from
+             * blocked syscall.
+             */
+            fprintf(stdout,"SINGLE_STEP\n");
+            if (!ptrace_singlestep(info->pid))
+                return false;
+        } else {
+            fprintf(stdout,"NOT GONNA WAIT\n");
+        }
     }
 
     /* Open libdynamorio.so as readonly in the child. */

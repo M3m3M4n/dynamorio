@@ -299,9 +299,12 @@ const char *options_list_str =
 #        endif
     "       -logdir <dir>      Logfiles will be stored in this directory.\n"
 #    endif
+#    ifdef UNIX
     "       -attach <pid>      Attach to the process with the given pid.\n"
-#    ifdef WINDOWS
-    "                          (Experimental)\n"
+    "                          Can be used with -wait_syscall.\n"
+    "       -wait_syscall      Only work with -attach.\n"
+    "                          Attaching to a process will force blocking system calls\n"
+    "                          to fail with EINTR. Use this to wait for them to finish first.\n"
 #    endif
     "       -use_dll <dll>     Inject given dll instead of configured DR dll.\n"
     "       -force             Inject regardless of configuration.\n"
@@ -1103,6 +1106,7 @@ _tmain(int argc, TCHAR *targv[])
     time_t start_time, end_time;
 #    else
     bool use_ptrace = false;
+    bool wait_syscall = false;
     bool kill_group = false;
 #    endif
     process_id_t attach_pid = 0;
@@ -1256,6 +1260,7 @@ _tmain(int argc, TCHAR *targv[])
             continue;
         }
 #    endif
+#    ifdef UNIX
         else if (strcmp(argv[i], "-attach") == 0) {
             const char *pid_str = argv[++i];
             process_id_t pid = strtoul(pid_str, NULL, 10);
@@ -1265,11 +1270,16 @@ _tmain(int argc, TCHAR *targv[])
                 usage(false, "attach to invalid pid");
             }
             attach_pid = pid;
-#    ifdef UNIX
+#        ifdef UNIX
             use_ptrace = true;
-#    endif
+#        endif
             continue;
         }
+        else if (strcmp(argv[i], "-wait_syscall") == 0) {
+            wait_syscall = true;
+            continue;
+        }
+#    endif
 #    ifdef UNIX
         else if (strcmp(argv[i], "-use_ptrace") == 0) {
             /* Undocumented option for using ptrace on a fresh process. */
