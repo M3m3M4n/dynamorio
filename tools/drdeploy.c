@@ -1260,8 +1260,8 @@ _tmain(int argc, TCHAR *targv[])
             continue;
         }
 #    endif
-#    ifdef UNIX
         else if (strcmp(argv[i], "-attach") == 0) {
+#    ifdef UNIX
             const char *pid_str = argv[++i];
             process_id_t pid = strtoul(pid_str, NULL, 10);
             if (pid == ULONG_MAX)
@@ -1270,16 +1270,22 @@ _tmain(int argc, TCHAR *targv[])
                 usage(false, "attach to invalid pid");
             }
             attach_pid = pid;
-#        ifdef UNIX
+#    endif
+#    ifdef UNIX
             use_ptrace = true;
-#        endif
+#    endif
+#    ifdef WINDOWS
+            usage(false, "attach in Windows not yet implemented");
+#    endif
             continue;
         }
+#    ifdef UNIX
         else if (strcmp(argv[i], "-wait_syscall") == 0) {
             wait_syscall = true;
             continue;
         }
 #    endif
+
 #    ifdef UNIX
         else if (strcmp(argv[i], "-use_ptrace") == 0) {
             /* Undocumented option for using ptrace on a fresh process. */
@@ -1562,16 +1568,16 @@ done_with_options:
         NULL_TERMINATE_BUFFER(exe_str);
         size = readlink(exe_str, exe, BUFFER_SIZE_ELEMENTS(exe));
 #        else
-        /* PR#3328: move GetModuleFileNameExW out of core library */
+        /* PR#3328: move GetModuleFileNameExW out of core library
+         * Consider creating new drfrontend function to get path 
+         */
         TCHAR exe_path[MAXIMUM_PATH];
         HANDLE attach_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
                                            FALSE, (DWORD)attach_pid);
         if (attach_handle == NULL ||
             !GetModuleFileNameExW(attach_handle, NULL, exe_path, MAXIMUM_PATH))
             usage(false, "attach to invalid pid");
-        /* tchar_to_char substitute */
-        WideCharToMultiByte(CP_UTF8, 0, exe_path, -1 /*null-term*/, exe_str, MAXIMUM_PATH,
-                            NULL, NULL);
+        drfront_tchar_to_char(exe_path, exe_str, MAXIMUM_PATH);
         NULL_TERMINATE_BUFFER(exe_str);
         size = strlen(exe_str);
         strncpy(exe, exe_str, size);
