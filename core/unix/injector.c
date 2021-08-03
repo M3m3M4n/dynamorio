@@ -145,9 +145,6 @@ typedef struct _dr_inject_info_t {
     bool exited;
     int exitcode;
     bool no_emulate_brk; /* is -no_emulate_brk in the option string? */
-    
-    bool wait_syscall; /* valid iff -attach, early handling of blocking syscalls */
-
     bool wait_syscall; /* valid iff -attach, handlle blocking syscalls */
 
 #ifdef MACOS
@@ -1203,7 +1200,7 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
         /* XXX: This disas call aborts on our raw bytes instructions.  Can we
          * teach DR's disassembler to avoid those instrs?
          */
-        instrlist_disassemble(dc, pc, ilist, STDERR);
+        //instrlist_disassemble(dc, pc, ilist, STDERR);
         fflush(stderr);
     }
 
@@ -1267,22 +1264,6 @@ injectee_open(dr_inject_info_t *info, const char *path, int flags, mode_t mode)
 {
     void *dc = GLOBAL_DCONTEXT;
     instrlist_t *ilist = instrlist_create(dc);
-    if (!info->wait_syscall) {
-        /* For attaching during blocking syscalls.
-         * Kernel will moves PC back 1 syscall instruction after tracee continue executing
-         * Inserting NOPs and move PC up to compensate.
-         */
-        uint i;
-        uint instr_num = 0;
-#    ifdef X86
-        instr_num = 2; /* sizeof(syscall) == 2 * sizeof(nop) */
-#    elif defined(ARM) || defined(AARCH64)
-        instr_num = 1;
-#    endif
-        for (i = 0; i < instr_num; i++) {
-            APP(ilist, XINST_CREATE_nop(dc));
-        }
-    }
     opnd_t args[MAX_SYSCALL_ARGS];
     int num_args = 0;
     gen_push_string(dc, ilist, path);
@@ -1542,22 +1523,6 @@ is_prev_bytes_syscall(process_id_t pid, app_pc src_pc)
 #        endif
 #    endif
     return false;
-}
-
-bool
-ptrace_send_and_wait_signal(process_id_t pid, int sig)
-{
-    fprintf(stdout,"send_and_wait_signal-ptrace\n");
-    if (our_ptrace(PTRACE_SINGLESTEP, pid, NULL, NULL) < 0)
-        return false;
-    fprintf(stdout,"send_and_wait_signal-KILL\n");
-    kill(pid, sig);
-    fprintf(stdout,"send_and_wait_signal-wait\n");
-    if (!wait_until_signal(pid, sig)) {
-        fprintf(stdout,"send_and_wait_signal-false\n");
-        return false;
-    }
-    return true;
 }
 
 bool
