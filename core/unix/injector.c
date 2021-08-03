@@ -1199,19 +1199,8 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
 
     // WATCHOUT , THIS CALL IS NOT ONLY USED IN INJECTEE_OPEN, WE NEED OTHER WAY TO ADD OFFSET
 
-    if (!info->wait_syscall && !info->wait_syscall_init){
-        uint offset = 0;
-#    ifdef X86
-        offset = 2;
-#    elif defined(ARM) || defined(AARCH64)
-        offset = 4;
-#    endif
-        our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc + offset);
-        info->wait_syscall_init = true;
-    }
-    else{
-        our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc);
-    }
+    our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc);
+
     if (!continue_until_break(info->pid)) {
         fprintf(stdout,"injectee_run_get_retval RUN SHELL GONE TO SHIT\n");
         return failure;
@@ -1243,22 +1232,6 @@ injectee_open(dr_inject_info_t *info, const char *path, int flags, mode_t mode)
 {
     void *dc = GLOBAL_DCONTEXT;
     instrlist_t *ilist = instrlist_create(dc);
-    if (!info->wait_syscall) {
-        /* For attaching during blocking syscalls.
-         * Kernel will moves PC back 1 syscall instruction after tracee continue executing
-         * Inserting NOPs and move PC up to compensate.
-         */
-        uint i;
-        uint instr_num = 0;
-#    ifdef X86
-        instr_num = 2; /* sizeof(syscall) == 2 * sizeof(nop) */
-#    elif defined(ARM) || defined(AARCH64)
-        instr_num = 1;
-#    endif
-        for (i = 0; i < instr_num; i++) {
-            APP(ilist, XINST_CREATE_nop(dc));
-        }
-    }
     opnd_t args[MAX_SYSCALL_ARGS];
     int num_args = 0;
     gen_push_string(dc, ilist, path);
