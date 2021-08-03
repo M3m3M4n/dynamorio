@@ -1264,7 +1264,6 @@ _tmain(int argc, TCHAR *targv[])
             continue;
         }
 #    endif
-#    ifdef UNIX
         else if (strcmp(argv[i], "-attach") == 0) {
 #    ifdef UNIX
             const char *pid_str = argv[++i];
@@ -1284,11 +1283,13 @@ _tmain(int argc, TCHAR *targv[])
 #    endif
             continue;
         }
+#    ifdef UNIX
         else if (strcmp(argv[i], "-wait_syscall") == 0) {
             wait_syscall = true;
             continue;
         }
 #    endif
+
 #    ifdef UNIX
 #        ifdef X86
         else if (strcmp(argv[i], "-skip_syscall") == 0) {
