@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "*.asm": "c"
+        "*.asm": "c",
+        "dr_frontend.h": "c"
     }
 }

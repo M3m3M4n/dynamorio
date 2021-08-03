@@ -1264,7 +1264,6 @@ _tmain(int argc, TCHAR *targv[])
             continue;
         }
 #    endif
-#    ifdef UNIX
         else if (strcmp(argv[i], "-attach") == 0) {
 #    ifdef UNIX
             const char *pid_str = argv[++i];
@@ -1297,6 +1296,7 @@ _tmain(int argc, TCHAR *targv[])
         }
 #        endif
 #    endif
+
 #    ifdef UNIX
         else if (strcmp(argv[i], "-use_ptrace") == 0) {
             /* Undocumented option for using ptrace on a fresh process. */
