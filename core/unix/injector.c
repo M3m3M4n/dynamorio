@@ -147,7 +147,6 @@ typedef struct _dr_inject_info_t {
     bool no_emulate_brk; /* is -no_emulate_brk in the option string? */
     
     bool wait_syscall; /* valid iff -attach, early handling of blocking syscalls */
-    bool wait_syscall_init; /* after ptrace a blocking syscall, run with offset only once */
 
     bool wait_syscall; /* valid iff -attach, handlle blocking syscalls */
 
@@ -656,6 +655,7 @@ DR_EXPORT
 bool
 dr_inject_process_inject(void *data, bool force_injection, const char *library_path)
 {
+    printf("dr_inject_process_inject\n");
     dr_inject_info_t *info = (dr_inject_info_t *)data;
     char dr_path_buf[MAXIMUM_PATH];
     char dr_ops[MAX_OPTIONS_STRING];
@@ -664,7 +664,7 @@ dr_inject_process_inject(void *data, bool force_injection, const char *library_p
     if (module_get_platform_path(info->exe, &platform, &alt_platform) ==
         PLATFORM_ERROR_CANNOT_OPEN)
         return false; /* couldn't read header */
-
+    printf("couldn't read header passed\n");
 #if defined(MACOS) && !defined(X64)
     if (platform == DR_PLATFORM_64BIT) {
         /* The target app is a universal binary and we're on a 64-bit kernel,
@@ -679,6 +679,7 @@ dr_inject_process_inject(void *data, bool force_injection, const char *library_p
     if (!get_config_val_other_app(info->image_name, info->pid, platform,
                                   DYNAMORIO_VAR_OPTIONS, dr_ops,
                                   BUFFER_SIZE_ELEMENTS(dr_ops), NULL, NULL, NULL)) {
+        printf("get_config_val_other_app\n");
         return false;
     }
 
@@ -705,7 +706,9 @@ dr_inject_process_inject(void *data, bool force_injection, const char *library_p
         if (!get_config_val_other_app(
                 info->image_name, info->pid, platform, DYNAMORIO_VAR_AUTOINJECT,
                 dr_path_buf, BUFFER_SIZE_ELEMENTS(dr_path_buf), NULL, NULL, NULL)) {
+            printf("couldn't Read the autoinject var from the config file if the caller didn't override it \n");
             return false;
+
         }
         library_path = dr_path_buf;
     }
@@ -1200,7 +1203,7 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
         /* XXX: This disas call aborts on our raw bytes instructions.  Can we
          * teach DR's disassembler to avoid those instrs?
          */
-        instrlist_disassemble(dc, pc, ilist, STDERR);
+        //instrlist_disassemble(dc, pc, ilist, STDERR);
         fflush(stderr);
     }
 
@@ -1228,6 +1231,7 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
 #    ifdef X86
         offset = SYSCALL_LENGTH;
 #    endif
+        fprintf(stdout,"OFFSET %ul\n", offset);
         our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc + offset);
     } else {
         our_ptrace(PTRACE_POKEUSER, info->pid, (void *)REG_PC_OFFSET, pc);
@@ -1263,22 +1267,6 @@ injectee_open(dr_inject_info_t *info, const char *path, int flags, mode_t mode)
 {
     void *dc = GLOBAL_DCONTEXT;
     instrlist_t *ilist = instrlist_create(dc);
-    if (!info->wait_syscall) {
-        /* For attaching during blocking syscalls.
-         * Kernel will moves PC back 1 syscall instruction after tracee continue executing
-         * Inserting NOPs and move PC up to compensate.
-         */
-        uint i;
-        uint instr_num = 0;
-#    ifdef X86
-        instr_num = 2; /* sizeof(syscall) == 2 * sizeof(nop) */
-#    elif defined(ARM) || defined(AARCH64)
-        instr_num = 1;
-#    endif
-        for (i = 0; i < instr_num; i++) {
-            APP(ilist, XINST_CREATE_nop(dc));
-        }
-    }
     opnd_t args[MAX_SYSCALL_ARGS];
     int num_args = 0;
     gen_push_string(dc, ilist, path);
@@ -1541,22 +1529,6 @@ is_prev_bytes_syscall(process_id_t pid, app_pc src_pc)
 }
 
 bool
-ptrace_send_and_wait_signal(process_id_t pid, int sig)
-{
-    fprintf(stdout,"send_and_wait_signal-ptrace\n");
-    if (our_ptrace(PTRACE_SINGLESTEP, pid, NULL, NULL) < 0)
-        return false;
-    fprintf(stdout,"send_and_wait_signal-KILL\n");
-    kill(pid, sig);
-    fprintf(stdout,"send_and_wait_signal-wait\n");
-    if (!wait_until_signal(pid, sig)) {
-        fprintf(stdout,"send_and_wait_signal-false\n");
-        return false;
-    }
-    return true;
-}
-
-bool
 inject_ptrace(dr_inject_info_t *info, const char *library_path)
 {
     long r;
@@ -1657,6 +1629,9 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
 #    endif
         injected_dr_start += offset;
     }
+
+    fprintf(stdout,"injected_dr_start = %p + %p = %p\n", (void*)loader.ehdr->e_entry, (void*)loader.load_delta, injected_dr_start);
+    fprintf(stdout,"ELF_LOADER_MAP_DESTROY\n");
     elf_loader_destroy(&loader);
 
     our_ptrace_getregs(info->pid, &regs);
@@ -1678,6 +1653,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
 #    endif
     }
 
+    fprintf(stdout,"Create an injection context\n");
     /* Create an injection context and "push" it onto the stack of the injectee.
      * If you need to pass more info to the injected child process, this is a
      * good place to put it.
@@ -1685,7 +1661,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
     memset(&args, 0, sizeof(args));
     user_regs_to_mc(&args.mc, &regs);
     args.argc = ARGC_PTRACE_SENTINEL;
-
+    fprintf(stdout,"We need to send the home directory over\n");
     /* We need to send the home directory over.  It's hard to find the
      * environment in the injectee, and even if we could HOME might be
      * different.
@@ -1703,14 +1679,14 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
 #    endif
 
     regs.REG_PC_FIELD = (ptr_int_t)injected_dr_start;
-    fprintf(stdout,"PTRACE_SETREG\n");
+    fprintf(stdout,"PTRACE_SETREG PC %p\n", injected_dr_start);
     our_ptrace_setregs(info->pid, &regs);
 
     if (op_exec_gdb) {
         detach_and_exec_gdb(info->pid, library_path);
         ASSERT_NOT_REACHED();
     }
-
+    fprintf(stdout,"This should run something equivalent to dynamorio_app_init\n");
     /* This should run something equivalent to dynamorio_app_init(), and then
      * return.
      * XXX: we can actually fault during dynamorio_app_init() due to safe_reads,
@@ -1729,6 +1705,28 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
         if (r < 0 || !WIFSTOPPED(status))
             return false;
         signal = WSTOPSIG(status);
+        {
+        //MY SHIT
+        fprintf(stdout,"CAUGHT SIGNAL %d\n", signal);
+        app_pc l_err_pc, start_pc;
+        our_ptrace(PTRACE_PEEKUSER, info->pid, (void *)REG_PC_OFFSET, &l_err_pc);
+        byte data[MAX_SHELL_CODE];
+        memset(data, 0, MAX_SHELL_CODE);
+        start_pc = (app_pc)ALIGN_BACKWARD(l_err_pc, PAGE_SIZE);
+        ptrace_read_memory(info->pid, data, start_pc, MAX_SHELL_CODE);
+        fprintf(stdout,"PC AT %p\n", l_err_pc);
+        fprintf(stdout,"READ MEM FROM %p\n", start_pc);
+        int count = 0;
+        int count2 = 0;
+        for (; count < MAX_SHELL_CODE/4; count++) {
+            printf("0x%x ",data[count*4]);
+            count2++;
+            if(count2 == 8){
+                count2 = 0;
+                printf("\n");
+            }
+        }
+        }
     } while (signal == SIGSEGV || signal == SIGILL);
 
     /* When we get SIGTRAP, DR has initialized. */
