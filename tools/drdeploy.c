@@ -1283,11 +1283,6 @@ _tmain(int argc, TCHAR *targv[])
 #    endif
             continue;
         }
-        else if (strcmp(argv[i], "-wait_syscall") == 0) {
-            wait_syscall = true;
-            continue;
-        }
-#    endif
 #    ifdef UNIX
 #        ifdef X86
         else if (strcmp(argv[i], "-skip_syscall") == 0) {
