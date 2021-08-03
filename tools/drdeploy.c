@@ -304,7 +304,7 @@ const char *options_list_str =
     "                          Can be used with -wait_syscall.\n"
     "       -wait_syscall      Only work with -attach.\n"
     "                          Attaching to a process will force blocking system calls\n"
-    "                          to fail with EINTR. Use this to wait for them to finish first.\n"
+    "                          to fail. Use this to wait for them to finish first.\n"
 #    endif
     "       -use_dll <dll>     Inject given dll instead of configured DR dll.\n"
     "       -force             Inject regardless of configuration.\n"
@@ -1798,7 +1798,7 @@ done_with_options:
         info("will exec %s", app_name);
         errcode = dr_inject_prepare_to_exec(app_name, app_argv, &inject_data);
     } else if (attach_pid != 0) {
-        errcode = dr_inject_prepare_to_attach(attach_pid, app_name, &inject_data);
+        errcode = dr_inject_prepare_to_attach(attach_pid, app_name, wait_syscall, &inject_data);
     } else
 #    elif defined(WINDOWS)
     if (attach_pid != 0) {
