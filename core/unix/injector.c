@@ -1525,6 +1525,37 @@ is_prev_bytes_syscall(process_id_t pid, app_pc src_pc)
     return false;
 }
 
+void
+dump_ptrace_stack_arg(const ptrace_stack_args_t *args)
+{
+    fprintf(stdout,"\nREGISTER_DUMP:\n");
+    reg_t *regs = (reg_t *) &args->mc;
+    int i = 0;
+#    ifdef X86
+#        ifdef X64
+    for (; i < 16; i++){
+#        else
+    for (; i < 8; i++){
+#        endif
+#    endif
+        fprintf(stdout,"%p\n", (void *) regs[i]);
+    }
+    fprintf(stdout,"\nREGISTER_DUMP DONE\n");
+}
+
+void
+dump_user_reg_struct_x64(const unsigned long long int *regs)
+{
+
+    // 0xfffffffffffffe00 = -512
+    fprintf(stdout,"\nREGISTER_DUMP_FIRST:\n");
+    int i = 0;
+    for (; i < 27; i++){
+        fprintf(stdout,"%p\n", (void *)regs[i]);
+    }
+    fprintf(stdout,"\nnREGISTER_DUMP_FIRST DONE\n");
+}
+
 bool
 inject_ptrace(dr_inject_info_t *info, const char *library_path)
 {
@@ -1574,6 +1605,10 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
             fprintf(stdout,"NOT GONNA WAIT\n");
         }
     }
+
+    our_ptrace_getregs(info->pid, &regs);
+    dump_user_reg_struct_x64((unsigned long long int *)&regs);
+
 
     /* Open libdynamorio.so as readonly in the child. */
     fprintf(stdout,"INJECTEE_OPEN\n");
@@ -1657,6 +1692,10 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
      */
     memset(&args, 0, sizeof(args));
     user_regs_to_mc(&args.mc, &regs);
+
+    dump_ptrace_stack_arg(&args);
+
+
     args.argc = ARGC_PTRACE_SENTINEL;
     fprintf(stdout,"We need to send the home directory over\n");
     /* We need to send the home directory over.  It's hard to find the
