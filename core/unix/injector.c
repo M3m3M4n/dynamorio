@@ -1547,7 +1547,14 @@ void
 dump_user_reg_struct_x64(const unsigned long long int *regs)
 {
 
-    // 0xfffffffffffffe00 = -512
+    // def tohex(val, nbits):
+    //     return hex((val + (1 << nbits)) % (1 << nbits))
+    //0xfffffffffffffffc = -4 = EINTR
+    //https://elixir.bootlin.com/linux/latest/source/include/uapi/asm-generic/errno-base.h#L8
+    //0xfffffffffffffe00 = -512 = kernel ERESTARTSYS
+    //https://elixir.bootlin.com/linux/latest/source/include/linux/errno.h#L16
+    //https://elixir.bootlin.com/linux/latest/source/arch/x86/kernel/signal.c#L801
+    //https://stackoverflow.com/questions/31946854/how-does-sigstop-work-in-linux-kernel
     fprintf(stdout,"\nREGISTER_DUMP_FIRST:\n");
     int i = 0;
     for (; i < 27; i++){
