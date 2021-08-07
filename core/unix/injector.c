@@ -1175,7 +1175,7 @@ injectee_run_get_retval(dr_inject_info_t *info, void *dc, instrlist_t *ilist)
 #    ifdef X86
     nop_times = SYSCALL_LENGTH;
 #    endif
-    int i;
+    uint i;
     for (i = 0; i < nop_times; i++) {
         PRE(ilist, XINST_CREATE_nop(dc));
     }
@@ -1616,6 +1616,23 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
     our_ptrace_getregs(info->pid, &regs);
     dump_user_reg_struct_x64((unsigned long long int *)&regs);
 
+    /* Hijacking errno value
+     * After attaching with ptrace during blocking syscall,
+     * Errno value is leaked from kernel handling
+     * Mask that value into EINTR
+     */
+    if (!info->wait_syscall) {
+    #    ifdef X86
+        if (is_prev_bytes_syscall(info->pid, (app_pc)regs.REG_PC_FIELD)) {
+            fprintf(stdout,"check_running_syscall TRUE\n");
+            /* prev bytes might can match by accident, so check return value */
+            if (regs.REG_RETVAL_FIELD == -ERESTARTSYS ||
+                regs.REG_RETVAL_FIELD == -ERESTARTNOINTR ||
+                regs.REG_RETVAL_FIELD == -ERESTARTNOHAND)
+                regs.REG_RETVAL_FIELD = -EINTR;
+        }
+    #    endif
+    }
 
     /* Open libdynamorio.so as readonly in the child. */
     fprintf(stdout,"INJECTEE_OPEN\n");
