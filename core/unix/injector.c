@@ -805,10 +805,12 @@ dr_inject_wait_for_child(void *data, uint64 timeout_millis)
              * There is no standard way of getting non-child target process' exit code.
              */
             if (kill(info->pid, 0) == -1) {
+                printf("dr_inject_wait_for_child KILL 0 RET -1\n");
                 if (errno == ESRCH)
                     exit = 1;
             }
             /* sleep might not be implemented using nanosleep */
+            printf("dr_inject_wait_for_child PROCESS LIVES - SLEEPING\n");
             nanosleep(&t, 0);
         } while (!exit && !timeout_expired);
         info->exitcode = 0;
