@@ -1509,21 +1509,29 @@ ptrace_singlestep(process_id_t pid)
 bool
 is_prev_bytes_syscall(process_id_t pid, app_pc src_pc)
 {
+    printf("is_prev_bytes_syscall\n");
 #    ifdef X86
     /* for X86 is concerned, SYSCALL_LENGTH == INT_LENGTH == SYSENTER_LENGTH */
     app_pc syscall_pc = src_pc - SYSCALL_LENGTH;
     /* ptrace_read_memory reads by multiple of sizeof(ptr_int_t) */
     byte instr_bytes[sizeof(ptr_int_t)];
     ptrace_read_memory(pid, instr_bytes, syscall_pc, sizeof(ptr_int_t));
+    printf("instr_bytes %hu\n", *(short *) instr_bytes);
+    printf("SYSCALL %04X SYSENTER %04X INT80 %04X\n", SYSCALL_AS_SHORT, SYSENTER_AS_SHORT, INT80_AS_SHORT);
 #        ifdef X64
-    if (*(short *)instr_bytes == SYSCALL_AS_SHORT)
+    if (*(unsigned short *)instr_bytes == SYSCALL_AS_SHORT) {
+        printf("is_prev_bytes_syscall TRUE SYSCALL\n");
         return true;
+    }
 #        else
-    if (*(short *)instr_bytes == SYSENTER_AS_SHORT ||
-        *(short *)instr_bytes == INT80_AS_SHORT)
-        return true;
+    if (*(unsigned short *)instr_bytes == SYSENTER_AS_SHORT ||
+        *(unsigned short *)instr_bytes == INT80_AS_SHORT){
+            printf("is_prev_bytes_syscall TRUE SYSENTER INT\n");
+            return true;
+        }
 #        endif
 #    endif
+    printf("is_prev_bytes_syscall FAILED\n");
     return false;
 }
 
@@ -1546,7 +1554,7 @@ dump_ptrace_stack_arg(const ptrace_stack_args_t *args)
 }
 
 void
-dump_user_reg_struct_x64(const unsigned long long int *regs)
+dump_user_reg_struct_x64(void** regs)
 {
 
     // def tohex(val, nbits):
@@ -1559,10 +1567,17 @@ dump_user_reg_struct_x64(const unsigned long long int *regs)
     //https://stackoverflow.com/questions/31946854/how-does-sigstop-work-in-linux-kernel
     fprintf(stdout,"\nREGISTER_DUMP_FIRST:\n");
     int i = 0;
-    for (; i < 27; i++){
-        fprintf(stdout,"%p\n", (void *)regs[i]);
+#    ifdef X86
+#        ifdef X64
+    for (; i < (sizeof(struct user_regs_struct) / sizeof(unsigned long long int)); i++)
+#        else
+    for (; i < (sizeof(struct user_regs_struct) / sizeof(long int)); i++)
+#        endif
+#    endif
+    {
+        fprintf(stdout,"%p\n", regs[i]);
     }
-    fprintf(stdout,"\nnREGISTER_DUMP_FIRST DONE\n");
+    fprintf(stdout,"\nREGISTER_DUMP_FIRST DONE\n");
 }
 
 bool
@@ -1613,27 +1628,6 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
         } else {
             fprintf(stdout,"NOT GONNA WAIT\n");
         }
-    }
-
-    our_ptrace_getregs(info->pid, &regs);
-    dump_user_reg_struct_x64((unsigned long long int *)&regs);
-
-    /* Hijacking errno value
-     * After attaching with ptrace during blocking syscall,
-     * Errno value is leaked from kernel handling
-     * Mask that value into EINTR
-     */
-    if (!info->wait_syscall) {
-    #    ifdef X86
-        if (is_prev_bytes_syscall(info->pid, (app_pc)regs.REG_PC_FIELD)) {
-            fprintf(stdout,"check_running_syscall TRUE\n");
-            /* prev bytes might can match by accident, so check return value */
-            if (regs.REG_RETVAL_FIELD == -ERESTARTSYS ||
-                regs.REG_RETVAL_FIELD == -ERESTARTNOINTR ||
-                regs.REG_RETVAL_FIELD == -ERESTARTNOHAND)
-                regs.REG_RETVAL_FIELD = -EINTR;
-        }
-    #    endif
     }
 
     /* Open libdynamorio.so as readonly in the child. */
@@ -1693,6 +1687,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
     elf_loader_destroy(&loader);
 
     our_ptrace_getregs(info->pid, &regs);
+    dump_user_reg_struct_x64((void **)&regs);
 
     /* Hijacking errno value
      * After attaching with ptrace during blocking syscall,
@@ -1702,6 +1697,7 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
     if (!info->wait_syscall) {
 #    ifdef X86
         if (is_prev_bytes_syscall(info->pid, (app_pc)regs.REG_PC_FIELD)) {
+            fprintf(stdout,"check_running_syscall TRUE\n");
             /* prev bytes might can match by accident, so check return value */
             if (regs.REG_RETVAL_FIELD == -ERESTARTSYS ||
                 regs.REG_RETVAL_FIELD == -ERESTARTNOINTR ||
@@ -1739,6 +1735,12 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
 #    else
 #        error "depends on arch stack growth direction"
 #    endif
+
+    // TEST RELOCATE - REMOVE WHEN DONE
+    // AFTER CONTINUING INTO _start IN libdynamorio.so, there is a check to relocate the lib
+    // in current inplementation it might or might not be called. normally not
+    // so we test it
+    regs.IF_X64_ELSE(rdi, edi) = 0;
 
     regs.REG_PC_FIELD = (ptr_int_t)injected_dr_start;
     fprintf(stdout,"PTRACE_SETREG PC %p\n", injected_dr_start);
@@ -1779,12 +1781,13 @@ inject_ptrace(dr_inject_info_t *info, const char *library_path)
         fprintf(stdout,"PC AT %p\n", l_err_pc);
         fprintf(stdout,"READ MEM FROM %p\n", start_pc);
         int count = 0;
-        int count2 = 0;
-        for (; count < MAX_SHELL_CODE/4; count++) {
-            printf("0x%x ",data[count*4]);
-            count2++;
-            if(count2 == 8){
-                count2 = 0;
+        //int *data_int = (int *)data;
+        for (; count < MAX_SHELL_CODE; count++) {
+            if ((count % 16) == 0) {
+                printf("%04x: ", (count));
+            }
+            printf("%02X ",data[count]);
+            if((count % 16) == 15){
                 printf("\n");
             }
         }
